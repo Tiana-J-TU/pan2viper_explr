@@ -1,0 +1,141 @@
+/* Copy `len` bytes from src to dst */
+/* 
+fun pnk_memcpy(1 dst, 1 src, 1 len) {
+	var i = 0;
+    var c = 0;
+    while (i < len) {
+        !ld8 c, (src + i);
+        !st8 c, (dst + i);
+        i = i + 1;
+    }
+	return 0;
+*/
+field val_ref: Ref
+
+/* Abstract array predicate */
+predicate byte_array(st: Ref, len: Int)
+    
+function lookup(self: Ref, i: Int, len: Int) : Int
+    requires acc(byte_array(self, len), wildcard)
+    requires 0 <= i
+    requires i < len
+
+/* Inspired by (sourced from Prusti-generated Viper) */
+/*
+function lookup_pure__$TY$__Array$128$u32$u32$Array$128$u32$$int$$$int$(self: Ref,
+  idx: Int): Int
+  requires acc(Array$128$u32(self), read$())
+  requires 0 <= idx
+  requires idx < 128 
+*/
+
+// Optimisation? Where lengths are known hardcode len into all these predicate/function
+//   definitions -> less work for solver?
+
+// Unsure whether useful, anyway arrays should be byte-indexed like the Pancake heap
+/* */
+function nwords_32_to_nbytes() : Int
+function nwords_64_to_nbytes() : Int
+
+// Saving byte into word and then storing as byte .. do I need to prove anything 
+//  about this? (Also, is this a re-usable pattern?)
+/* 
+function word_32_to_byte(w: Int) : Int
+    requires 0 <= w
+
+function lossless_word_32_to_byte(w: Int) : Int
+   requires 0 <= w 
+   requires w < 256
+
+function byte_to_word(b: Int) : Int
+   requires 0 <= b
+   requires b < 256
+*/
+
+
+// Permissions
+// -- want framing of src heap fragment (partial permissions across all data s.t. no modifications possible)
+// -- require exclusive permission to dst heap fragment
+
+/* Translation variant I: ignore shared memory (treat as conventional heap accesses) */
+method pnk_memcpy(dst: Ref, src: Ref, len: Int) returns (v: Int)
+    requires len == 128
+    // `wildcard` amount always less than currently held -> guaranteed < 1
+    requires acc(src.val_ref, wildcard) && acc(byte_array(src.val_ref,len), wildcard)
+    requires acc(dst.val_ref, write) && acc(byte_array(dst.val_ref,len), write)   
+{
+    var i: Int := 0
+    var c: Int := 0
+
+    var t: Int := i
+    assert 0 <= i
+label pre_lp
+    while (i < len) 
+        invariant 0 <= i && // invariant also needs to acc predicates for permission transfer
+                  acc(src.val_ref, wildcard) && acc(byte_array(src.val_ref, len), wildcard) && 
+                  acc(dst.val_ref, write) && acc(byte_array(dst.val_ref, len), write) &&
+                  forall j: Int :: {old[pre_lp](lookup(dst.val_ref, j, len))}
+                    (0 <= j && j < i && j < len)
+                     ==>(old[pre_lp](lookup(src.val_ref, j, len)) ==  lookup(dst.val_ref, j, len))
+    {   
+        // to prove invariant maintenance probably need to know something like:
+        // old[pre_lp](lookup(..)) == old
+        // is this captured by having only partial permission to src.val_ref alone?  
+        t := i // established a temporary variable -- is this necessary?
+label pre_ld8
+        // bounds check 
+        // assert 0 <= t && t < len // Causes a trigger warning 
+        assert 0 <= t && t < 128
+        // check permission to read src segment
+        assert !(perm(byte_array(src.val_ref, len)) == none)
+        //  !ld8 c, (src + i);
+label post_ld8 
+        // variable c updated with value of heap cell
+        inhale (c == old[pre_ld8](lookup(src.val_ref, old[pre_ld8](t), len)))
+        
+label pre_st8
+        // bounds check 
+        // assert 0 <= t && t < len
+        assert 0 <= t && t < 128 
+        // check permission to modify
+        assert perm(dst.val_ref) == write 
+        assert perm(byte_array(dst.val_ref, len)) >= write // Okay ... this is weird
+        // What do we want it to mean when we have permission to an abstract predicate?
+        // !st8 c, (dst + i);
+label post_st8 
+        // heap cell updated
+        inhale (lookup(dst.val_ref, old[pre_st8](t), len) == old[pre_st8](c))
+        inhale (forall j: Int :: { lookup(old[post_st8](dst.val_ref), j, len) } // Unsure about suitable trigger here
+                  (0 <= j && j < 128 && !(old[pre_st8](t) == j)) 
+                     ==> (old[pre_st8](lookup(dst.val_ref, j, len)) == lookup(dst.val_ref, j, len))
+                )
+        i := i + 1 // i = i + 1; [translation straightforward]
+    }
+
+    // correctness condition might look something like this? 
+    // Going to need a better loop invariant to prove this
+    assert (forall j: Int :: { old[pre_lp](lookup(src.val_ref, j, len)) } 
+        (0 <= j && j < 128) ==> (old[pre_lp](lookup(src.val_ref, j, len)) ==  lookup(dst.val_ref, j, len))
+    ) 
+    v := 0 // Right equivalent of `return 0;`?
+    
+    /* assert (forall j: Int :: {??}  
+        (0 <= j && j < 128) ==> (old[pre_lp](lookup(src.val_ref,j,len)) 
+                                 == old[pre_ld8](lookup(src.val_ref, j, len))
+                                 == old[post_ld8](lookup(src.val_ref, j, len))
+                                 == old[pre_st8](lookup(src.val_ref, j, len))
+                                 == old[post_st8](lookup(src.val_ref, j, len))                
+                                )
+    ) */
+    // Necessary triggers derivable from proof outline?
+}
+
+
+// Model heap changes w/ Viper's inbuilt Seq type
+//   -- no mechanism for declaring permissions?
+
+// Encoding ideas
+// 1 -- abstract array predicates and pure lookup functions 
+// 2 -- (non-abstract) recursive array predicates
+// 3 -- array domain 
+// 4 -- something else
