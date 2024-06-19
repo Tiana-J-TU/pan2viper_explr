@@ -29,31 +29,38 @@ domain Array {
 field val_array: Array
 
 // We don't need triggers here?
-define access(a, p) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val, p) // a: Array
+// define access(a, p) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val, p) 
+
+define access(a) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val)
 // define unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old(loc(a, j).val)
 // define onlymodified(a, i) forall j: Int :: 0 <= j && j < len(a) && j != i ==> loc(a, j).val == old(loc(a,j).val)
 // define onlymodifiedupto(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j ==> loc(a, j).val == old(loc(a,j).val)
-// Can we easily get untouched(src.val_ref), given that acc to src.val_ref not exclusive?
+// Can we easily get unmodified(src.val_ref), given that acc to src.val_ref not exclusive?
 
 // variant of above macro which describes modification in current iteration
 // define onlymodifiedupto_curriter(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j
                                     // ==> loc(a, j).val == old[pre_st8](loc(a,j).val)
+
 
 method pnk_memcpy(dst: Ref, src: Ref) returns (v: Int)
     requires acc(src.val_array) && acc(dst.val_array)
     requires len(dst.val_array) == 128 && len(src.val_array) == 128
     // `wildcard` amount always less than currently held -> guaranteed < 1
     // possibly replace wildcards with explicit permission assertions: ex. 1 > acc > 0 
-    requires access(src.val_array, wildcard)
-    requires access(dst.val_array, write)
+    requires access(src.val_array)
+    requires access(dst.val_array)
 {
     var i: Int := 0
     var c: Int := 0
 
     var t: Int := i
-    assert 0 <= i
+    assert access(src.val_array)
+
 label pre_lp
     while (i < 128) // Hardcoded length 
+        invariant 0 <= i && i <= 128 
+                  && acc(src.val_array)
+                  && access(src.val_array) 
         /* invariant 0 <= i && // invariant also needs to acc predicates for permission transfer
                   i < 128 && 
                   access(src.val_array, wildcard) &&
@@ -66,7 +73,7 @@ label pre_ld8
         // assert 0 <= t && t < len // Causes a trigger warning 
         assert 0 <= t && t < 128
         // check permission to read src segment
-        // assert !(perm(loc(src.val_array, t)) == none)
+        assert !(perm(loc(src.val_array, t).val) == none)
         
         // c := loc(src.val_array, t).val //  !ld8 c, (src + i);
         
