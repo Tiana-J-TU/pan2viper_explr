@@ -19,8 +19,6 @@ domain Array {
     axiom length_nonneg { forall a: Array :: 0 <= len(a) }
 }
 
-// Translation in same style as above, but using array domains instead
-
 // From "array max" example: http://viper.ethz.ch/examples/max-array-elimination.html
 // We have useful macros
 
@@ -28,28 +26,17 @@ domain Array {
 // Domain definition of arrays 
 field val_array: Array
 
-// We don't need triggers here?
+// define access(a) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val)
 define access(a, p) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val, p) 
 define sameupto(a, b, i) 
     len(a) == len(b) ==> (forall j: Int :: 0 <= j && j < len(a) && j < i ==> loc(a, j).val == loc(b, j).val)
-// define access(a) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val)
 // define unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old(loc(a, j).val)define unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old(loc(a, j).val)
 define loop_unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old[pre_lp](loc(a, j).val)
 define hardcoded_len 256
-// define onlymodified(a, i) forall j: Int :: 0 <= j && j < len(a) && j != i ==> loc(a, j).val == old(loc(a,j).val)
-// define onlymodifiedupto(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j ==> loc(a, j).val == old(loc(a,j).val)
-// Can we easily get unmodified(src.val_ref), given that acc to src.val_ref not exclusive?
-
-// variant of above macro which describes modification in current iteration
-// define onlymodifiedupto_curriter(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j
-                                    // ==> loc(a, j).val == old[pre_st8](loc(a,j).val)
-
 
 method pnk_memcpy(dst: Ref, src: Ref) returns (v: Int)
     requires acc(src.val_array, 1/2) && acc(dst.val_array, write)
     requires len(dst.val_array) == hardcoded_len && len(src.val_array) == hardcoded_len
-    // `wildcard` amount always less than currently held -> guaranteed < 1
-    // possibly replace wildcards with explicit permission assertions: ex. 1 > acc > 0 
     requires access(src.val_array, 1/2)
     requires access(dst.val_array, write)
 {
@@ -101,7 +88,9 @@ label post_st8
         assert (loc(dst.val_array, old[pre_st8](t)).val == old[pre_st8](c))
         // assert (onlymodifiedupto_curriter(dst.val_array, old[pre_st8](t)))
 
+        /* --------------------------------------------------------- */
         i := i + 1 // i = i + 1; [translation straightforward]
+        /* --------------------------------------------------------- */
     }
 
     // correctness criterion
