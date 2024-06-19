@@ -20,7 +20,6 @@ domain Array {
 }
 
 // From "array max" example: http://viper.ethz.ch/examples/max-array-elimination.html
-// We have useful macros
 
 // From Viper paper (section 5)
 // Domain definition of arrays 
@@ -60,8 +59,7 @@ label pre_lp
         t := i 
 label pre_ld8
         // bounds check 
-        // assert 0 <= t && t < len // Causes a trigger warning 
-        assert 0 <= t && t < hardcoded_len
+        assert 0 <= t && t < len(src.val_array)
         // check permission to read src segment
         assert !(perm(loc(src.val_array, t).val) == none)
         
@@ -75,7 +73,7 @@ label post_ld8
         
 label pre_st8
         // bounds check (repetitive here but maybe something that a translator might auto gen)
-        assert 0 <= t && t < hardcoded_len 
+        assert 0 <= t && t < len(dst.val_array)
         // check permission to modify
         assert perm(loc(dst.val_array, t).val) == write     
 
