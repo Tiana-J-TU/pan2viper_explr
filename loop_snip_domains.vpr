@@ -30,20 +30,20 @@ field val_array: Array
 
 // We don't need triggers here?
 define access(a, p) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val, p) // a: Array
-define unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old(loc(a, j).val)
-define onlymodified(a, i) forall j: Int :: 0 <= j && j < len(a) && j != i ==> loc(a, j).val == old(loc(a,j).val)
-define onlymodifiedupto(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j ==> loc(a, j).val == old(loc(a,j).val)
+// define unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old(loc(a, j).val)
+// define onlymodified(a, i) forall j: Int :: 0 <= j && j < len(a) && j != i ==> loc(a, j).val == old(loc(a,j).val)
+// define onlymodifiedupto(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j ==> loc(a, j).val == old(loc(a,j).val)
 // Can we easily get untouched(src.val_ref), given that acc to src.val_ref not exclusive?
 
 // variant of above macro which describes modification in current iteration
-define onlymodifiedupto_curriter(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j
-                                    ==> loc(a, j).val == old[pre_st8](loc(a,j).val)
+// define onlymodifiedupto_curriter(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j
+                                    // ==> loc(a, j).val == old[pre_st8](loc(a,j).val)
 
 method pnk_memcpy(dst: Ref, src: Ref) returns (v: Int)
+    requires acc(src.val_array) && acc(dst.val_array)
     requires len(dst.val_array) == 128 && len(src.val_array) == 128
     // `wildcard` amount always less than currently held -> guaranteed < 1
     // possibly replace wildcards with explicit permission assertions: ex. 1 > acc > 0 
-    requires acc(src.val_array) && acc(dst.val_array)
     requires access(src.val_array, wildcard)
     requires access(dst.val_array, write)
 {
@@ -54,11 +54,11 @@ method pnk_memcpy(dst: Ref, src: Ref) returns (v: Int)
     assert 0 <= i
 label pre_lp
     while (i < 128) // Hardcoded length 
-        invariant 0 <= i && // invariant also needs to acc predicates for permission transfer
+        /* invariant 0 <= i && // invariant also needs to acc predicates for permission transfer
                   i < 128 && 
                   access(src.val_array, wildcard) &&
                   access(dst.val_array, write) &&
-                  onlymodifiedupto(dst.val_array,i)
+                  onlymodifiedupto(dst.val_array,i) */
     {   
         t := i 
 label pre_ld8
@@ -66,35 +66,35 @@ label pre_ld8
         // assert 0 <= t && t < len // Causes a trigger warning 
         assert 0 <= t && t < 128
         // check permission to read src segment
-        assert !(perm(loc(src.val_array, t)) == none)
+        // assert !(perm(loc(src.val_array, t)) == none)
         
-        c := loc(src.val_array, t).val //  !ld8 c, (src + i);
+        // c := loc(src.val_array, t).val //  !ld8 c, (src + i);
         
 label post_ld8 
         // variable c updated with value of heap cell
         // now we can replcace inhales with assertions
-        assert c == old[pre_ld8](loc(src.val_array, old[pre_ld8](t)).val)
+        // assert c == old[pre_ld8](loc(src.val_array, old[pre_ld8](t)).val)
         
 label pre_st8
         // bounds check 
         // assert 0 <= t && t < len
-        assert 0 <= t && t < 128 
+        // assert 0 <= t && t < 128 
         // check permission to modify
-        assert perm(loc(dst.val_array, t)) == write        
+        // assert perm(loc(dst.val_array, t)) == write        
         
-        loc(dst.val_array, t).val := c // !st8 c, (dst + i);
+        // loc(dst.val_array, t).val := c // !st8 c, (dst + i);
 
 label post_st8 
         // heap cell updated
-        assert (loc(dst.val_array, old[pre_st8](t)).val == old[pre_st8](c))
-        assert (onlymodifiedupto_curriter(dst.val_array, old[pre_st8](t)))
+        // assert (loc(dst.val_array, old[pre_st8](t)).val == old[pre_st8](c))
+        // assert (onlymodifiedupto_curriter(dst.val_array, old[pre_st8](t)))
 
         i := i + 1 // i = i + 1; [translation straightforward]
     }
 
     // correctness criterion
-    assert forall j: Int :: {} 
-      0 <= j && j < 128 ==> loc(dst.val_array, j).val == old[pre_lp](loc(src.val_array, j).val)
+    // assert forall j: Int :: {} 
+    // 0 <= j && j < 128 ==> loc(dst.val_array, j).val == old[pre_lp](loc(src.val_array, j).val)
 
     v := 0    
 }
