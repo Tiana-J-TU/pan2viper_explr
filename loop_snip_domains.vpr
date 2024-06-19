@@ -30,9 +30,11 @@ field val_array: Array
 
 // We don't need triggers here?
 define access(a, p) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val, p) 
-
+define sameupto(a, b, i) 
+    len(a) == len(b) ==> (forall j: Int :: 0 <= j && j < len(a) && j < i ==> loc(a, j).val == loc(b, j).val)
 // define access(a) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val)
-// define unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old(loc(a, j).val)
+// define unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old(loc(a, j).val)define unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old(loc(a, j).val)
+define loop_unmodified(a) forall j: Int :: 0 <= j && j < len(a) ==> loc(a, j).val == old[pre_lp](loc(a, j).val)
 // define onlymodified(a, i) forall j: Int :: 0 <= j && j < len(a) && j != i ==> loc(a, j).val == old(loc(a,j).val)
 // define onlymodifiedupto(a,i) forall j: Int :: 0 <= j && j < len(a) && i < j ==> loc(a, j).val == old(loc(a,j).val)
 // Can we easily get unmodified(src.val_ref), given that acc to src.val_ref not exclusive?
@@ -44,7 +46,7 @@ define access(a, p) forall j: Int :: 0 <= j && j < len(a) ==> acc(loc(a, j).val,
 
 method pnk_memcpy(dst: Ref, src: Ref) returns (v: Int)
     requires acc(src.val_array, 1/2) && acc(dst.val_array, write)
-    requires len(dst.val_array) == 128 && len(src.val_array) == 128
+    requires len(dst.val_array) == 256 && len(src.val_array) == 256
     // `wildcard` amount always less than currently held -> guaranteed < 1
     // possibly replace wildcards with explicit permission assertions: ex. 1 > acc > 0 
     requires access(src.val_array, 1/2)
@@ -56,21 +58,23 @@ method pnk_memcpy(dst: Ref, src: Ref) returns (v: Int)
     var t: Int := i
 
 label pre_lp
-    while (i < 128) // Hardcoded length 
-        invariant 0 <= i && i <= 128 
+    while (i < 256) // Hardcoded length 
+        invariant 0 <= i && i <= 256 
                   && acc(src.val_array, 1/2)
-                  && len(src.val_array) == 128
+                  && len(src.val_array) == 256
                   && access(src.val_array, 1/2) 
                   && acc(dst.val_array, write)
-                  && len(dst.val_array) == 128
+                  && len(dst.val_array) == 256
                   && access(dst.val_array, write) 
+                  && sameupto(src.val_array, dst.val_array, i) 
+                  && loop_unmodified(src.val_array)
                   // && onlymodifiedupto(..) // Deal with this once permission transfer correct
     {   
         t := i 
 label pre_ld8
         // bounds check 
         // assert 0 <= t && t < len // Causes a trigger warning 
-        assert 0 <= t && t < 128
+        assert 0 <= t && t < 256
         // check permission to read src segment
         assert !(perm(loc(src.val_array, t).val) == none)
         
@@ -84,7 +88,7 @@ label post_ld8
         
 label pre_st8
         // bounds check (repetitive here but maybe something that a translator might auto gen)
-        assert 0 <= t && t < 128 
+        assert 0 <= t && t < 256 
         // check permission to modify
         assert perm(loc(dst.val_array, t).val) == write     
 
@@ -101,8 +105,7 @@ label post_st8
     }
 
     // correctness criterion
-    // assert forall j: Int :: {} 
-    // 0 <= j && j < 128 ==> loc(dst.val_array, j).val == old[pre_lp](loc(src.val_array, j).val)
+    assert forall j: Int :: 0 <= j && j < 256 ==> loc(dst.val_array, j).val == old[pre_lp](loc(src.val_array, j).val)
 
     v := 0    
 }
