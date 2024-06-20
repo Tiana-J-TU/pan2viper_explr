@@ -18,11 +18,7 @@ function lookup_pure__$TY$__Array$hardcoded_len$u32$u32$Array$hardcoded_len$u32$
   requires idx < hardcoded_len
 */
 
-// Permissions
-// -- want framing of src heap fragment (partial permissions across all data s.t. no modifications possible)
-// -- require exclusive permission to dst heap fragment
-
-define hardcoded_len 128
+define hardcoded_len 256
 define loop_unmodified(a, l) 
   forall j: Int :: 0 <= j && j < l ==> (old[pre_lp](lookup(a.val_ref, j, l)) == lookup(a.val_ref, j, l))
 define sameupto(a, b, i, l) forall j: Int :: 0 <= j && j < l && j < i ==> lookup(a.val_ref, j, l) == lookup(b.val_ref, j, l)
@@ -81,7 +77,10 @@ label post_st8
                   (0 <= j && j < hardcoded_len && !(old[pre_st8](t) == j)) 
                      ==> (old[pre_st8](lookup(dst.val_ref, j, len)) == lookup(dst.val_ref, j, len))
                 )
+
+        /* --------------------------------------------------------- */
         i := i + 1 // i = i + 1; [translation straightforward]
+        /* --------------------------------------------------------- */
     }
 
     // correctness condition might look something like this? 
