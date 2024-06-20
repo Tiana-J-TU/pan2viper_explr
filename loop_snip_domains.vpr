@@ -38,6 +38,12 @@ method pnk_memcpy(dst: Ref, src: Ref) returns (v: Int)
     requires len(dst.val_array) == hardcoded_len && len(src.val_array) == hardcoded_len
     requires access(src.val_array, 1/2)
     requires access(dst.val_array, write)
+
+    ensures acc(src.val_array, 1/2) && acc(dst.val_array, write) 
+    ensures access(src.val_array, 1/2) && access(dst.val_array, write) 
+    ensures len(dst.val_array) == hardcoded_len
+    ensures forall j: Int :: 0 <= j && j < hardcoded_len ==> loc(dst.val_array, j).val == old(loc(src.val_array, j).val)
+    
 {
     var i: Int := 0
     var c: Int := 0
@@ -90,9 +96,11 @@ label post_st8
         i := i + 1 // i = i + 1; [translation straightforward]
         /* --------------------------------------------------------- */
     }
-
-    // correctness criterion
+    
     assert forall j: Int :: 0 <= j && j < hardcoded_len ==> loc(dst.val_array, j).val == old[pre_lp](loc(src.val_array, j).val)
+    
+    /* --------------------------------------------------------- */
+    v := 0 // return 0;
+    /* --------------------------------------------------------- */
 
-    v := 0    
 }
