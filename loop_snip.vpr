@@ -72,12 +72,18 @@ label pre_st8
         // !st8 c, (dst + i);
 label post_st8 
         // heap cell updated
+
+        // need to "lose sight" of array value so that it can change without introducing contradictory
+        //   state assumptions
+        exhale acc(dst.val_ref, write)
+        inhale acc(dst.val_ref, write)
+        inhale(acc(byte_array(dst.val_ref, len), write))
+
         inhale (lookup(dst.val_ref, old[pre_st8](t), len) == old[pre_st8](c))
         inhale (forall j: Int :: 
                   (0 <= j && j < hardcoded_len && !(old[pre_st8](t) == j)) 
                      ==> (old[pre_st8](lookup(dst.val_ref, j, len)) == lookup(dst.val_ref, j, len))
                 )
-
         /* --------------------------------------------------------- */
         i := i + 1 // i = i + 1; [translation straightforward]
         /* --------------------------------------------------------- */
