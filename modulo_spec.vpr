@@ -1,0 +1,88 @@
+// Attempt at setting up proof/specs/lemmas for custom operations in
+//   a similar style to what is done in Verus, for instance, see
+//   https://github.com/verus-lang/verus/blob/main/source/rust_verify/example/bitvector_equivalence.rs
+
+
+// Viper already supports modulo arithmetic, but this is apparently something that we will want 
+//   to avoid using as much as possible for performance reasons (non-linear arith bad)
+// We can try to view % as an uninterpreted function, and only expose a limited amount of information
+//   about it when needed
+// Domains can be used to achieve this effect, but I'll need to see this used in a sufficiently 
+//   complicated example to be able to tell whether this is likely to cause any other performance issues
+domain ModInt {
+    function create_int(x: Int) : ModInt
+    function get_value(a: ModInt) : Int
+    function modulo(x: ModInt, d: ModInt) : ModInt
+
+    // In the case of bit-level functions, use the integrated definitions from bit_vector theory in SMTLIB
+    //   to separately prove that any axioms (assumptions) check-out 
+    // These checks will have to be done in a separate file, so that the details of bit_vector theory are
+    //   not exposed to the SMT solver when the present document is verified
+    axiom axSum {
+        forall x: ModInt, d: ModInt :: {modulo(x,d)} 
+        0 <= get_value(modulo(x,d)) && get_value(modulo(x,d)) < get_value(d) 
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------
+
+// Alternative option: use requires/ensures clauses with unintepreted functions
+
+// Not allowed because function postconditions can only be value assertions (due to purity)
+/*
+predicate does_modulo(x: Int, d: Int, r: Int) 
+function uninterp_modulo(x: Int, d: Int) : Int
+  requires true
+  ensures does_modulo(x, d, result) 
+*/
+
+function uninterp_modulo(x: Int, d: Int) : Int
+    requires true
+    ensures 0 <= result && result < d
+
+// Can constrain domain with predicates if needed
+predicate in_range(x: Int) {0 <= x && x < 128}
+
+// -------------------------------------------------------------------------------------------------------------
+
+// Option III: marginally better than options I & II?
+// Nicely pack uninterpreted functions and their specifications (via axioms) into one abstract domain
+//   note: the custom type which this domain declares is never actually used.
+
+// This was inspired & adapted from examples found in the Silicon verifier tests 
+//   (Silicon is the symbolic execution based verifier for Viper's intermediate repn.)
+
+// Useful legal prefixes to prevent name collisions: `_` and `$` (seems like that's all we have)
+domain BitOpsEtc {
+    
+    // bit operations
+
+    // Pancake supports 4 different kinds of shifts, will need some time to recall the differences between them
+    function _lshift(w: Int, n: Int) : Int 
+    function _rshift(w: Int, n: Int) : Int 
+
+    function _bw_or(w: Int, x: Int): Int
+    function _bw_and(w: Int, x: Int): Int
+    function _bw_xor(w: Int, x: Int): Int
+    function _bw_not(w: Int) : Int // Check whether this actually exists in Pancake
+
+    // etc
+    function _modulo() : Int 
+
+    // these are all adapted from the mentioned Silicon test code
+    // they don't say much about these unintepreted functions
+    axiom ax_bw_and {
+        (forall w: Int, x: Int :: { _bw_and(w, x) } _bw_and(w, x) >= 0)
+    }
+    
+    axiom ax_bw_or {
+        (forall w: Int, x: Int :: { _bw_or(w, x) } _bw_or(w, x) >= 0)
+    }
+    
+    axiom ax_bw_xor {
+        (forall w: Int, x: Int :: { _bw_xor(w, x) } _bw_xor(w, x) >= 0)
+    }
+}
+
+
+
