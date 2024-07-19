@@ -1,0 +1,132 @@
+// Start [manual] translation of snippet w/ some bit stuff from `uart.pan`
+
+// bitvector domain w/ interpretation which allows solver to use SMT solver's built-in 
+//   bitvectors during verification
+domain myBV interpretation (SMTLIB: "(_ BitVec 64)", Boogie: "bv64") {
+
+   function toBV64(i: Int): myBV interpretation "(_ int2bv 64)"
+   function toInt(bv: myBV): Int interpretation "(_ bv2int 64)"
+
+   function xor(b1: myBV, b2: myBV): myBV interpretation "bvxor"
+   function and(b1: myBV, b2: myBV): myBV interpretation "bvand"
+   function or(b1: myBV, b2: myBV): myBV interpretation "bvor"
+   function add(b1: myBV, b2: myBV): myBV interpretation "bvadd"
+   function shl(b1: myBV, b2: myBV): myBV interpretation "bvshl" // Pancake `<<`
+   function lshr(b1: myBV, b2: myBV): myBV interpretation "bvlshr" // Pancake `>>>`
+   function ashr(b1: myBV, b2: myBV): myBV interpretation "bvashr"// Pancake `>>`
+   function not(b1: myBV): myBV interpretation "bvnot"
+}
+
+// Treat machine words as booleans in an analogous way to Pancake
+function bool_of_bv(bv: myBV) : Bool 
+{ toInt(bv) > 0 }
+
+// Heap model
+// ---------------------------------------------------------------------------------------- //
+
+// Initial heap model (hopefully flexible enough for later changes)
+// ex. Heap.uart_base -> uart_base.val ; uart_base.addr
+// main method should have form `main(heap: Ref, [...] ) { [...] }` 
+
+// Fields assumed to exist within the "Heap" ref object
+// This kind of set-up would mean that we model select heap locations abstractly
+field uart_base: Ref
+
+// Fields of a named location on heap 
+//   this layer of indirection could be dropped if unnecessary
+field val: myBV
+field addr: myBV // each named location should correspond to a fixed address
+// so we should always have partial (but never exclusive) permissions to _.addr 
+
+// Using this (abstract - for now) method for now will make future modifications
+//   of the heap model easier to implement
+// Things get weird w/ wildcare permissions, so throughout this document 1/4 is used as the non-zero, 
+//   non-exclusive fractional permission amount wherever possible
+method lds(src: Ref) returns (res: myBV) 
+   requires acc(src.val, 1/4) && acc(src.addr,1/4)
+   ensures acc(src.val, 1/4) && res == src.val && acc(src.addr,1/4)  
+{ res := src.val } 
+
+// ---------------------------------------------------------------------------------------- //
+
+// for now, just set a base address value via a define
+define _base toBV64(0)
+// #define MASK_HW 65535
+define MASK_HW toBV64(65535)
+// #define STATIC_AREA_SIZE 512
+define STATIC_AREA_SIZE toBV64(512)
+// #define FUNC_BASE @base + STATIC_AREA_SIZE
+define FUNC_BASE add(_base, STATIC_AREA_SIZE)
+
+function bit (n: Int) : myBV { shl(toBV64(1),toBV64(n)) }
+
+// FFI calls
+// ---------------------------------------------------------------------------------------- //
+
+// @transfer_hw copies half a word starting from the address given by
+//   offset to the address given by temp
+predicate transferred() // TODO
+
+// We're not interested in verifying the internals of FFI calls or revealing their
+//   implementation details to the verifier
+// But these can't be written as abstract functions because they are generally not
+//   side-effect free
+// This function in particular exists only because of a missing Pancake language 
+//   feature, so its still worth thinking about its verification
+method transfer_hw() 
+   requires true // TODO
+   ensures transferred()
+{  inhale transferred() }
+
+// #define TS_OFFSET 180
+define TS_OFFSET toBV64(180)
+// #define WORD_SIZE 8
+define WORD_SIZE 8
+
+
+// These kinds of functions are inlined in the translated code
+/*
+#define get_uart_base(regs) 				\
+	var uart_base = @base + WORD_SIZE * 15; \
+	var regs = lds {1} uart_base; 			\ 
+*/
+function addr_uart_base(): myBV { add(_base, toBV64(WORD_SIZE * 15)) }
+
+/* 
+#define get_imx_uart_regs_ts(ts, regs)     \
+	var offset = regs + TS_OFFSET;         \
+	var temp = FUNC_BASE;                  \
+	@transfer_hw(offset, 1, temp, 1);      \
+	var ts = (lds {1} temp) & MASK_HW;     \
+*/
+
+
+// Actual *manual* translation
+// ---------------------------------------------------------------------------------------- //
+
+// later will probably *not* want to be using (interpreted) bit_vectors everywhere 
+method within_tx_provide() {
+   // ... external loop omitted
+
+   // var c_addr = FUNC_BASE + 512;
+   var c_addr: myBV := add(FUNC_BASE, toBV64(512)) 
+
+   while(true) 
+   {
+     // get_imx_uart_regs_ts(ts, regs)
+     // translated as expanded macro (inlined):
+     
+
+   }
+}
+
+method test (x: Ref) returns (v: Int) {
+
+    quasihavoc(x.uart_base)
+
+    var b1: myBV := toBV64(0)
+    var b2: myBV := toBV64(1)
+
+    var res: myBV :=  and(b1,b2)
+}
+
