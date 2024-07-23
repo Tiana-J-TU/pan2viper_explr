@@ -130,3 +130,27 @@ method test (x: Ref) returns (v: Int) {
     var res: myBV :=  and(b1,b2)
 }
 
+// COMMENTS
+// ---------------------------------------------------------------------------------------- //
+
+/*
+
+This document contains an exploratory example of a manually translated Pancake driver *snippet*.
+The hope is that the majority of driver code can be handled in a way similar to what is observed here.
+It is likely that many of the ideas and design decisions which occur here will turn out to be 
+unsatisfactory for one reason or another, and the partial purpose of this example is to reveal some
+of these dead ends, as well as any issues or limitations that we may run into later.
+
+The current heap encoding assumes that we have a heap abstraction which accounts for the fixed
+nature of the majority of our heap locations. Ideally, these could be completely determined w/
+the use of additional user (programmer) annotations.
+Each fixed heap location is represented by a named field within a Viper `Ref` object. This field
+itself consists of another object, with two separate fields `val: bv` and `addr: bv`. 
+
+It is very possible that this `addr` field is unnecessary, but it is kept in this preliminary
+model for testing/flexibility reasons.
+
+Nothing yet is set up for heap segments which are used arbitrarily. These segments may need to 
+represented as arrays if no further information can be provided or inferred. 
+
+*/
