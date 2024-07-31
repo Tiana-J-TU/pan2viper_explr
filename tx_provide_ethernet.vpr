@@ -38,9 +38,8 @@ define MAX_COUNT toBV64(256)
 define NET_BUFF_DESC_SIZE mul(toBV64(2), WORD_SIZE)
 // #define HW_RING_SIZE (3 * WORD_SIZE + MAX_COUNT * NET_BUFF_DESC_SIZE)
 define HW_RING_SIZE add(mul(toBV64(3), WORD_SIZE), mul(MAX_COUNT, NET_BUFF_DESC_SIZE))
-// -------------------------------------------------------------------------------------
-
-// -------------------------------------------------------------------------------------
+// #define TX_COUNT 256
+define TX_COUNT toBV64(256)
 
 // #define THREAD_MEMORY_RELEASE()         \
 //     @THREAD_MEMORY_RELEASE(0,0,0,0);    \
@@ -78,8 +77,61 @@ method tx_provide() returns (r: Int) {
   while (reprocess) {
     while (true) {
       /*
-
+        hw_ring_full(full, hw_ring_tx, TX_COUNT)
+        net_queue_empty_active(empty, tx_queue)
+        if (full || empty) {
+           break;
+        }
       */
+      
+      // Expanded macro for `hw_ring_full(full, hw_ring_tx, TX_COUNT)
+        // Expanded macro for `hw_ring_get_tail(tail, hw_ring)` 
+      var tail: myBV := toBV64(0)
+      shared_ldw(tail, hw_ring_tx)
+
+        // Expanded macro for `hw_ring_get_head(head, hw_ring)`
+      var head: myBV := toBV64(0)
+      shared_ldw(head, add(hw_ring_tx, WORD_SIZE))
+
+      var value : myBV := sub(tail, add(head, toBV64(1)))
+        // Expanded macro for `pnk_modulo(mod, value, ring_size)`
+      var pnk_modulo_mask: myBV := sub(TX_COUNT, toBV64(1))
+      var mod: myBV := and(value, pnk_modulo_mask)
+
+      var full: Bool := (toInt(mod) == 0)
+
+      // Expanded macro for `net_queue_empty_active(empty, tx_queue)`
+      //  Expanded macro for `get_active_tail(tail, tx_queue)`                 
+         // Expanded macro for `get_active_queue(tail, tx_queue)`
+      tail := toBV64(0)
+      shared_ldw(tail, add(tx_queue, WORD_SIZE))
+
+         // Expanded macro for `get_tail(tail, tx_queue)`
+      tail := toBV64(0)
+      shared_ldw(tail, tx_queue)
+
+      //  Expanded macro for `get_active_head(head, tx_queue)`                 
+         // Expanded macro for `get_active_queue(head, tx_queue)`
+      tail := toBV64(0)
+      shared_ldw(tail, add(tx_queue, WORD_SIZE))
+
+         // `get_head(head, tx_queue)`
+      head := toBV64(0)
+      shared_ldw(head, add(tx_queue, WORD_SIZE))
+
+      var empty: Bool := toInt(sub(tail,head)) == 0                     
+   
+      if (full || empty) {
+         // break // Well this doesn't work - deal with it later
+      }
+
+      // --- END OF BLOCK 1 ------------------------------------------------------- //
+
+
+
+
+
+
     }
 
 
@@ -107,50 +159,53 @@ method tx_provide() returns (r: Int) {
       } 
    */
 
-   // ! DELETE LATER - working from outside-in, hw_ring hasn't been defined yet so just 
-   //   give it a value for now ... ! DON'T FORGET TO DELETE LATER
-   var hw_ring: myBV := toBV64(0)
-   var ring_size: myBV := toBV64(16) // DELETE THIS TOO
-
    // Expanded macro for `hw_ring_full(full, hw_ring_tx, TX_COUNT)
-      // Expanded macro for `hw_ring_get_tail(tail, hw_ring)` 
-      var tail: myBV := toBV64(0)
-      shared_ldw(tail, hw_ring)
+      // Expanded macro for `hw_ring_get_tail(tail, hw_ring_tx)` 
+      var tail_1: myBV := toBV64(0)
+      shared_ldw(tail_1, hw_ring_tx)
 
-      // Expanded macro for `hw_ring_get_head(head, hw_ring)`
-      var head: myBV := toBV64(0)
-      shared_ldw(head, add(hw_ring, WORD_SIZE))
+      // Expanded macro for `hw_ring_get_head(head, hw_ring_tx)`
+      var head_1: myBV := toBV64(0)
+      shared_ldw(head_1, add(hw_ring_tx, WORD_SIZE))
 
-      var value : myBV := sub(tail, add(head, toBV64(1)))
+      var value_1 : myBV := sub(tail_1, add(head_1, toBV64(1)))
       // Expanded macro for `pnk_modulo(mod, value, ring_size)`
-      var pnk_modulo_mask: myBV := sub(ring_size, toBV64(1))
-      var mod: myBV := and(value, pnk_modulo_mask)
+      var pnk_modulo_mask_1: myBV := sub(TX_COUNT, toBV64(1))
+      var mod_1: myBV := and(value_1, pnk_modulo_mask_1)
 
-      var full: Bool := (toInt(mod) == 0)
+      var full_1: Bool := (toInt(mod_1) == 0)
 
    // Expanded macro for `net_queue_empty_active(empty, tx_queue)`
      //  Expanded macro for `get_active_tail(tail, tx_queue)`                 
          // Expanded macro for `get_active_queue(tail, tx_queue)`
-         tail := toBV64(0)
-         shared_ldw(tail, add(tx_queue, WORD_SIZE))
+         tail_1 := toBV64(0)
+         shared_ldw(tail_1, add(tx_queue, WORD_SIZE))
 
          // Expanded macro for `get_tail(tail, tx_queue)`
-         tail := toBV64(0)
-         shared_ldw(tail, tx_queue)
+         tail_1 := toBV64(0)
+         shared_ldw(tail_1, tx_queue)
 
      //  Expanded macro for `get_active_head(head, tx_queue)`                 
          // Expanded macro for `get_active_queue(head, tx_queue)`
-         tail := toBV64(0)
-         shared_ldw(tail, add(tx_queue, WORD_SIZE))
+         tail_1 := toBV64(0)
+         shared_ldw(tail_1, add(tx_queue, WORD_SIZE))
 
          // `get_head(head, tx_queue)`
-         head := toBV64(0)
-         shared_ldw(head, add(tx_queue, WORD_SIZE))
+         head_1 := toBV64(0)
+         shared_ldw(head_1, add(tx_queue, WORD_SIZE))
 
-   var empty: Bool := toInt(sub(tail,head)) == 0                     
+   var empty_1: Bool := toInt(sub(tail_1,head_1)) == 0                     
 
-   if (!full && !empty) {
+   if (!full_1 && !empty_1) {
       // Expanded macro for `net_cancel_signal_active(tx_queue)
+        // Expanded macro for `get_free_queue(queue, tx_queue)`
+      queue := toBV64(0)
+      shared_ldw(queue, tx_queue)  
+        // Expanded macro for `set_consumer_signalled(queue)`
+      signal := toBV64(1)
+      shared_st8(add(queue,mul(toBV64(2),WORD_SIZE)), signal)
+      EXT_THREAD_MEMORY_RELEASE(bv_zero, bv_zero, bv_zero, bv_zero)
+
       reprocess := true
    }
   }
