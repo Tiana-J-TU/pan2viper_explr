@@ -1,0 +1,295 @@
+// Start [manual] translation of `tx_provide()` from `ethernet.pan`
+
+domain myBV interpretation (SMTLIB: "(_ BitVec 64)", Boogie: "bv64") {
+
+   function toBV64(i: Int): myBV interpretation "(_ int2bv 64)"
+   function toInt(bv: myBV): Int interpretation "(_ bv2int 64)"
+
+   function xor(b1: myBV, b2: myBV): myBV interpretation "bvxor"
+   function and(b1: myBV, b2: myBV): myBV interpretation "bvand"
+   function or(b1: myBV, b2: myBV): myBV interpretation "bvor"
+   function add(b1: myBV, b2: myBV): myBV interpretation "bvadd"
+   function sub(b1: myBV, b2: myBV): myBV interpretation "bvsub"
+   function mul(b1: myBV, b2:myBV): myBV interpretation "bvmul"
+   function shl(b1: myBV, b2: myBV): myBV interpretation "bvshl" // Pancake `<<`
+   function lshr(b1: myBV, b2: myBV): myBV interpretation "bvlshr" // Pancake `>>>`
+   function ashr(b1: myBV, b2: myBV): myBV interpretation "bvashr"// Pancake `>>`
+   function not(b1: myBV): myBV interpretation "bvnot"
+
+   function toBool(bv: myBV): Bool 
+
+   axiom ax_toBool {
+      forall b:myBV :: { toBool(b) }
+         (toInt(b) == 0 ==> toBool(b) == true) &&
+         (toInt(b) != 0 ==> toBool(b) == false)
+   }
+}
+
+// START OF NEW STUFF
+// ---------------------------------------------------------------------------------------- //
+
+// for now, just set a base address value via a define
+define _base toBV64(0) // base addr is at 0
+// #define WORD_SIZE 8
+define WORD_SIZE toBV64(8)
+// #define MAX_COUNT 256
+define MAX_COUNT toBV64(256)
+// #define NET_BUFF_DESC_SIZE  (2 * WORD_SIZE)
+define NET_BUFF_DESC_SIZE mul(toBV64(2), WORD_SIZE)
+// #define HW_RING_SIZE (3 * WORD_SIZE + MAX_COUNT * NET_BUFF_DESC_SIZE)
+define HW_RING_SIZE add(mul(toBV64(3), WORD_SIZE), mul(MAX_COUNT, NET_BUFF_DESC_SIZE))
+// -------------------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------------------
+
+// #define THREAD_MEMORY_RELEASE()         \
+//     @THREAD_MEMORY_RELEASE(0,0,0,0);    \
+method EXT_THREAD_MEMORY_RELEASE(a1: myBV, a2: myBV, l1: myBV, l2: myBV)
+   requires true
+   ensures true
+{}
+
+method shared_ldw(a: myBV, len: myBV) 
+   requires true
+   ensures true
+{}
+
+method shared_st8(a: myBV, v: myBV) 
+   requires true
+   ensures true
+{}
+
+define bv_zero toBV64(0)
+method tx_provide() returns (r: Int) {
+
+  /* 
+    var reprocess = true;
+    get_hw_ring_tx(hw_ring_tx) // macro
+    get_tx_queue(tx_queue)     // macro
+    get_eth_regs(eth)          // macro
+  */
+
+  var reprocess : Bool := true
+  // Expanded macro for `get_hw_ring_tx(hw_ring_tx)`
+  var hw_ring_tx: myBV := add(add(_base,mul(toBV64(9),WORD_SIZE)),HW_RING_SIZE)  
+  // Expanded macro for `get_tx_queue(tx_queue)`
+  var tx_queue: myBV := add(_base,mul(toBV64(6), WORD_SIZE))
+
+  while (reprocess) {
+    while (true) {
+      /*
+
+      */
+    }
+
+
+   /*
+    net_request_signal_active(tx_queue)
+    reprocess = false;
+   */
+   // Expanded macro for `net_request_signal_active(tx_queue)`
+      // Expanded macro for `get_active_queue(queue, tx_queue)
+   var queue: myBV := toBV64(0)
+   shared_ldw(queue, add(tx_queue, WORD_SIZE))
+      // Expanded macro for `clear_consumer_signalled(queue)`
+   var signal: myBV := toBV64(0)
+   shared_st8(add(queue,mul(WORD_SIZE, toBV64(2))),signal) // ??
+
+   EXT_THREAD_MEMORY_RELEASE(bv_zero,bv_zero,bv_zero,bv_zero)
+   reprocess := false
+
+   /*
+      hw_ring_full(full, hw_ring_tx, TX_COUNT)
+      net_queue_empty_active(empty, tx_queue)
+      if ((!full) && (!empty)) {
+         net_cancel_signal_active(tx_queue)
+         reprocess = true;
+      } 
+   */
+
+   // ! DELETE LATER - working from outside-in, hw_ring hasn't been defined yet so just 
+   //   give it a value for now ... ! DON'T FORGET TO DELETE LATER
+   var hw_ring: myBV := toBV64(0)
+   var ring_size: myBV := toBV64(16) // DELETE THIS TOO
+
+   // Expanded macro for `hw_ring_full(full, hw_ring_tx, TX_COUNT)
+      // Expanded macro for `hw_ring_get_tail(tail, hw_ring)` 
+      var tail: myBV := toBV64(0)
+      shared_ldw(tail, hw_ring)
+
+      // Expanded macro for `hw_ring_get_head(head, hw_ring)`
+      var head: myBV := toBV64(0)
+      shared_ldw(head, add(hw_ring, WORD_SIZE))
+
+      var value : myBV := sub(tail, add(head, toBV64(1)))
+      // Expanded macro for `pnk_modulo(mod, value, ring_size)`
+      var pnk_modulo_mask: myBV := sub(ring_size, toBV64(1))
+      var mod: myBV := and(value, pnk_modulo_mask)
+
+      var full: Bool := (toInt(mod) == 0)
+
+   // Expanded macro for `net_queue_empty_active(empty, tx_queue)`
+     //  Expanded macro for `get_active_tail(tail, tx_queue)`                 
+         // Expanded macro for `get_active_queue(tail, tx_queue)`
+         tail := toBV64(0)
+         shared_ldw(tail, add(tx_queue, WORD_SIZE))
+
+         // Expanded macro for `get_tail(tail, tx_queue)`
+         tail := toBV64(0)
+         shared_ldw(tail, tx_queue)
+
+     //  Expanded macro for `get_active_head(head, tx_queue)`                 
+         // Expanded macro for `get_active_queue(head, tx_queue)`
+         tail := toBV64(0)
+         shared_ldw(tail, add(tx_queue, WORD_SIZE))
+
+         // `get_head(head, tx_queue)`
+         head := toBV64(0)
+         shared_ldw(head, add(tx_queue, WORD_SIZE))
+
+   var empty: Bool := toInt(sub(tail,head)) == 0                     
+
+   if (!full && !empty) {
+      // Expanded macro for `net_cancel_signal_active(tx_queue)
+      reprocess := true
+   }
+  }
+  r := 0
+}
+
+// Below stuff is copy-pasted from previous file
+
+// Heap model
+// ---------------------------------------------------------------------------------------- //
+
+// Initial heap model (hopefully flexible enough for later changes)
+// ex. Heap.uart_base -> uart_base.val ; uart_base.addr
+// main method should have form `main(heap: Ref, [...] ) { [...] }` 
+
+// Fields assumed to exist within the "Heap" ref object
+// This kind of set-up would mean that we model select heap locations abstractly
+field uart_base: Ref
+
+// Fields of a named location on heap 
+//   this layer of indirection could be dropped if unnecessary
+field val: myBV
+field addr: myBV // each named location should correspond to a fixed address
+// so we should always have partial (but never exclusive) permissions to _.addr 
+
+// Using this (abstract - for now) method for now will make future modifications
+//   of the heap model easier to implement
+// Things get weird w/ wildcare permissions, so throughout this document 1/4 is used as the non-zero, 
+//   non-exclusive fractional permission amount wherever possible
+method lds(src: Ref) returns (res: myBV) 
+   requires acc(src.val, 1/4) && acc(src.addr,1/4)
+   ensures acc(src.val, 1/4) && res == src.val && acc(src.addr,1/4)  
+{ res := src.val } 
+
+// ---------------------------------------------------------------------------------------- //
+
+// #define MASK_HW 65535
+define MASK_HW toBV64(65535)
+// #define STATIC_AREA_SIZE 512
+define STATIC_AREA_SIZE toBV64(512)
+// #define FUNC_BASE @base + STATIC_AREA_SIZE
+define FUNC_BASE add(_base, STATIC_AREA_SIZE)
+
+function bit (n: Int) : myBV { shl(toBV64(1),toBV64(n)) }
+
+// FFI calls
+// ---------------------------------------------------------------------------------------- //
+
+// @transfer_hw copies half a word starting from the address given by
+//   offset to the address given by temp
+predicate transferred() // TODO
+
+// We're not interested in verifying the internals of FFI calls or revealing their
+//   implementation details to the verifier
+// But these can't be written as abstract functions because they are generally not
+//   side-effect free
+// This function in particular exists only because of a missing Pancake language 
+//   feature, so its still worth thinking about its verification
+method transfer_hw() 
+   requires true // TODO
+   ensures transferred()
+{  inhale transferred() }
+
+// #define TS_OFFSET 180
+define TS_OFFSET toBV64(180)
+
+
+
+// These kinds of functions are inlined in the translated code
+/*
+#define get_uart_base(regs) 				\
+	var uart_base = @base + WORD_SIZE * 15; \
+	var regs = lds {1} uart_base; 			\ 
+*/
+function addr_uart_base(): myBV { add(_base, mul(WORD_SIZE, toBV64(15))) }
+
+/* 
+#define get_imx_uart_regs_ts(ts, regs)     \
+	var offset = regs + TS_OFFSET;         \
+	var temp = FUNC_BASE;                  \
+	@transfer_hw(offset, 1, temp, 1);      \
+	var ts = (lds {1} temp) & MASK_HW;     \
+*/
+
+
+// Actual *manual* translation
+// ---------------------------------------------------------------------------------------- //
+
+// later will probably *not* want to be using (interpreted) bit_vectors everywhere 
+method within_tx_provide() {
+   // ... external loop omitted
+
+   // var c_addr = FUNC_BASE + 512;
+   var c_addr: myBV := add(FUNC_BASE, toBV64(512)) 
+
+   while(true) 
+   {
+     // get_imx_uart_regs_ts(ts, regs)
+     // translated as expanded macro (inlined):
+     
+
+   }
+}
+
+method test (x: Ref) returns (v: Int) {
+
+    quasihavoc(x.uart_base)
+
+    var b1: myBV := toBV64(0)
+    var b2: myBV := toBV64(1)
+
+    var res: myBV :=  and(b1,b2)
+}
+
+// COMMENTS
+// ---------------------------------------------------------------------------------------- //
+
+/*
+
+This document contains an exploratory example of a manually translated Pancake driver *snippet*.
+The hope is that the majority of driver code can be handled in a way similar to what is observed here.
+It is likely that many of the ideas and design decisions which occur here will turn out to be 
+unsatisfactory for one reason or another, and the partial purpose of this example is to reveal some
+of these dead ends, as well as any issues or limitations that we may run into later.
+
+The current heap encoding assumes that we have a heap abstraction which accounts for the fixed
+nature of the majority of our heap locations. Ideally, these could be completely determined w/
+the use of additional user (programmer) annotations.
+Each fixed heap location is represented by a named field within a Viper `Ref` object. This field
+itself consists of another object, with two separate fields `val: bv` and `addr: bv`. 
+
+It is very possible that this `addr` field is unnecessary, but it is kept in this preliminary
+model for testing/flexibility reasons.
+
+Nothing yet is set up for heap segments which are used arbitrarily. These segments may need to 
+represented as arrays if no further information can be provided or inferred. 
+
+External models:
+  [I don't understand this well, needs clarification]
+  device interactions occur through: ffi_calls, shared memory accesses
+  OS interactions occur through: ffi_calls
+*/
