@@ -62,6 +62,10 @@ define MASK_16 toBV64(65535)
 define WRAP shl(toBV64(1),toBV64(13))
 // #define DESCRIPTOR_SIZE WORD_SIZE
 define DESCRIPTOR_SIZE WORD_SIZE
+// #define TDAR_OFFSET 20
+define TDAR_OFFSET toBV64(20)
+// #define TDAR_TDAR (1 << 24)
+define TDAR_TDAR shl(toBV64(1),toBV64(24))
 
 // #define THREAD_MEMORY_RELEASE()         \
 //     @THREAD_MEMORY_RELEASE(0,0,0,0);    \
@@ -70,7 +74,13 @@ method EXT_THREAD_MEMORY_RELEASE(a1: myBV, a2: myBV, l1: myBV, l2: myBV)
    ensures true
 {}
 
-method shared_ldw(a: myBV, len: myBV) 
+// Double check that dest & src arguments appear in this order 
+method shared_ldw(d: myBV, s: myBV) 
+   requires true
+   ensures true
+{}
+
+method shared_ld32(d: myBV, s: myBV)
    requires true
    ensures true
 {}
@@ -115,6 +125,11 @@ method tx_provide() returns (r: Int) {
   var hw_ring_tx: myBV := add(add(_base,mul(toBV64(9),WORD_SIZE)),HW_RING_SIZE)  
   // Expanded macro for `get_tx_queue(tx_queue)`
   var tx_queue: myBV := add(_base,mul(toBV64(6), WORD_SIZE))
+  // Expanded macro for `get_eth_regs(eth)`
+  var addrs:myBV := _base
+  var eth_R: Record := lds(shape_One(), addrs) 
+  // Loading the Shape `1` has to be done in two steps (because of how I've encoded `lds` & Shapes)
+  var eth: myBV := get_word_field(eth_R,0)
 
   while (reprocess) {
     while (true) {
@@ -236,8 +251,15 @@ method tx_provide() returns (r: Int) {
          pnk_modulo(mod, hw_tail, TX_COUNT)
          hw_ring_set_tail(mod, hw_ring_tx)
       */
-      
-  
+
+      hw_tail := add(hw_tail, toBV64(1))
+      // Expanded macro for `pnk_modulo(mod, hw_tail, TX_COUNT)`
+      var pnk_modulo_mask_1: myBV := sub(TX_COUNT, toBV64(1))
+      var mod_1: myBV := and(hw_tail, pnk_modulo_mask_1)
+
+      // Expanded macro for `hw_ring_set_tail(mod, hw_ring_tx)`
+      shared_stw(hw_ring_tx, mod_1)
+
       // --- END OF BLOCK 5 ------------------------------------------------------- //
 
       /*
@@ -246,9 +268,16 @@ method tx_provide() returns (r: Int) {
             set_eth_tdar(TDAR_TDAR, eth)
          }
       */
+      // Expanded macro for `get_eth_tdar(tdar, eth)`
+      var tdar: myBV := toBV64(0)
+      shared_ld32(tdar, add(eth, TDAR_OFFSET))
+
+      if (!toBool(and(tdar, TDAR_TDAR))) {
+         // Expanded macro for `set_eth_tdar(TDAR_TDAR, eth)
+         shared_st32(add(eth, TDAR_OFFSET), tdar)
+      }
+
     }
-
-
    /*
     net_request_signal_active(tx_queue)
     reprocess = false;
@@ -283,11 +312,11 @@ method tx_provide() returns (r: Int) {
       shared_ldw(head_1, add(hw_ring_tx, WORD_SIZE))
 
       var value_1 : myBV := sub(tail_1, add(head_1, toBV64(1)))
-      // Expanded macro for `pnk_modulo(mod, value, ring_size)`
-      var pnk_modulo_mask_1: myBV := sub(TX_COUNT, toBV64(1))
-      var mod_1: myBV := and(value_1, pnk_modulo_mask_1)
+      // Expanded macro for `pnk_modulo(mod, value, TX_COUNT)`
+      var pnk_modulo_mask_2: myBV := sub(TX_COUNT, toBV64(1))
+      var mod_2: myBV := and(value_1, pnk_modulo_mask_2)
 
-      var full_1: Bool := (toInt(mod_1) == 0)
+      var full_1: Bool := (toInt(mod_2) == 0)
 
    // Expanded macro for `net_queue_empty_active(empty, tx_queue)`
      //  Expanded macro for `get_active_tail(tail, tx_queue)`                 
@@ -325,140 +354,3 @@ method tx_provide() returns (r: Int) {
   }
   r := 0
 }
-
-// Below stuff is copy-pasted from previous file
-
-// Heap model
-// ---------------------------------------------------------------------------------------- //
-
-// Initial heap model (hopefully flexible enough for later changes)
-// ex. Heap.uart_base -> uart_base.val ; uart_base.addr
-// main method should have form `main(heap: Ref, [...] ) { [...] }` 
-
-// Fields assumed to exist within the "Heap" ref object
-// This kind of set-up would mean that we model select heap locations abstractly
-field uart_base: Ref
-
-// Fields of a named location on heap 
-//   this layer of indirection could be dropped if unnecessary
-// field val: myBV
-// field addr: myBV // each named location should correspond to a fixed address
-// so we should always have partial (but never exclusive) permissions to _.addr 
-
-// Using this (abstract - for now) method for now will make future modifications
-//   of the heap model easier to implement
-// Things get weird w/ wildcare permissions, so throughout this document 1/4 is used as the non-zero, 
-//   non-exclusive fractional permission amount wherever possible
-/* method lds(src: Ref) returns (res: myBV) 
-   requires acc(src.val, 1/4) && acc(src.addr,1/4)
-   ensures acc(src.val, 1/4) && res == src.val && acc(src.addr,1/4)  
-{ res := src.val } 
-*/ 
-// ---------------------------------------------------------------------------------------- //
-
-// #define MASK_HW 65535
-define MASK_HW toBV64(65535)
-// #define STATIC_AREA_SIZE 512
-define STATIC_AREA_SIZE toBV64(512)
-// #define FUNC_BASE @base + STATIC_AREA_SIZE
-define FUNC_BASE add(_base, STATIC_AREA_SIZE)
-
-function bit (n: Int) : myBV { shl(toBV64(1),toBV64(n)) }
-
-// FFI calls
-// ---------------------------------------------------------------------------------------- //
-
-// @transfer_hw copies half a word starting from the address given by
-//   offset to the address given by temp
-predicate transferred() // TODO
-
-// We're not interested in verifying the internals of FFI calls or revealing their
-//   implementation details to the verifier
-// But these can't be written as abstract functions because they are generally not
-//   side-effect free
-// This function in particular exists only because of a missing Pancake language 
-//   feature, so its still worth thinking about its verification
-method transfer_hw() 
-   requires true // TODO
-   ensures transferred()
-{  inhale transferred() }
-
-// #define TS_OFFSET 180
-define TS_OFFSET toBV64(180)
-
-
-
-// These kinds of functions are inlined in the translated code
-/*
-#define get_uart_base(regs) 				\
-	var uart_base = @base + WORD_SIZE * 15; \
-	var regs = lds {1} uart_base; 			\ 
-*/
-function addr_uart_base(): myBV { add(_base, mul(WORD_SIZE, toBV64(15))) }
-
-/* 
-#define get_imx_uart_regs_ts(ts, regs)     \
-	var offset = regs + TS_OFFSET;         \
-	var temp = FUNC_BASE;                  \
-	@transfer_hw(offset, 1, temp, 1);      \
-	var ts = (lds {1} temp) & MASK_HW;     \
-*/
-
-
-// Actual *manual* translation
-// ---------------------------------------------------------------------------------------- //
-
-// later will probably *not* want to be using (interpreted) bit_vectors everywhere 
-method within_tx_provide() {
-   // ... external loop omitted
-
-   // var c_addr = FUNC_BASE + 512;
-   var c_addr: myBV := add(FUNC_BASE, toBV64(512)) 
-
-   while(true) 
-   {
-     // get_imx_uart_regs_ts(ts, regs)
-     // translated as expanded macro (inlined):
-     
-
-   }
-}
-
-method test (x: Ref) returns (v: Int) {
-
-    quasihavoc(x.uart_base)
-
-    var b1: myBV := toBV64(0)
-    var b2: myBV := toBV64(1)
-
-    var res: myBV :=  and(b1,b2)
-}
-
-// COMMENTS
-// ---------------------------------------------------------------------------------------- //
-
-/*
-
-This document contains an exploratory example of a manually translated Pancake driver *snippet*.
-The hope is that the majority of driver code can be handled in a way similar to what is observed here.
-It is likely that many of the ideas and design decisions which occur here will turn out to be 
-unsatisfactory for one reason or another, and the partial purpose of this example is to reveal some
-of these dead ends, as well as any issues or limitations that we may run into later.
-
-The current heap encoding assumes that we have a heap abstraction which accounts for the fixed
-nature of the majority of our heap locations. Ideally, these could be completely determined w/
-the use of additional user (programmer) annotations.
-Each fixed heap location is represented by a named field within a Viper `Ref` object. This field
-itself consists of another object, with two separate fields `val: bv` and `addr: bv`. 
-
-It is very possible that this `addr` field is unnecessary, but it is kept in this preliminary
-model for testing/flexibility reasons.
-
-Nothing yet is set up for heap segments which are used arbitrarily. These segments may need to 
-represented as arrays if no further information can be provided or inferred. 
-
-External models:
-  [I don't understand this well, needs clarification]
-  device interactions occur through: ffi_calls, shared memory accesses
-  OS interactions occur through: ffi_calls
-*/
