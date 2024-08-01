@@ -25,9 +25,17 @@ domain myBV interpretation (SMTLIB: "(_ BitVec 64)", Boogie: "bv64") {
    }
 }
 
-// START OF NEW STUFF
-// ---------------------------------------------------------------------------------------- //
+domain Shape {
+   function shape_One(): Shape
+   function cons_shape(ls: Seq[Int]): Shape // TODO: refine this
 
+}
+
+domain Record { // Can I parameterise on Shapes?
+
+   // Hopefully the only use case here
+   function get_word_field(r: Record,i: Int): myBV 
+}
 // for now, just set a base address value via a define
 define _base toBV64(0) // base addr is at 0
 // #define WORD_SIZE 8
@@ -40,6 +48,20 @@ define NET_BUFF_DESC_SIZE mul(toBV64(2), WORD_SIZE)
 define HW_RING_SIZE add(mul(toBV64(3), WORD_SIZE), mul(MAX_COUNT, NET_BUFF_DESC_SIZE))
 // #define TX_COUNT 256
 define TX_COUNT toBV64(256)
+// #define ETH_FUNC_BASE
+define ETH_FUNC_BASE add(_base,toBV64(8360))
+// #define TXD_READY (1 << 15)
+define TXD_READY shl(toBV64(1),toBV64(15))
+// #define TXD_ADDCRC (1 << 10)
+define TXD_ADDCRC shl(toBV64(1),toBV64(10))
+// #define TXD_LAST (1 << 11)
+define TXD_LAST shl(toBV64(1),toBV64(11))
+// #define MASK_16 65535
+define MASK_16 toBV64(65535)
+// #define WRAP (1 << 13)
+define WRAP shl(toBV64(1),toBV64(13))
+// #define DESCRIPTOR_SIZE WORD_SIZE
+define DESCRIPTOR_SIZE WORD_SIZE
 
 // #define THREAD_MEMORY_RELEASE()         \
 //     @THREAD_MEMORY_RELEASE(0,0,0,0);    \
@@ -53,7 +75,27 @@ method shared_ldw(a: myBV, len: myBV)
    ensures true
 {}
 
+method shared_stw(a: myBV, v: myBV) 
+   requires true
+   ensures true
+{}
+
 method shared_st8(a: myBV, v: myBV) 
+   requires true
+   ensures true
+{}
+
+method shared_st32(a: myBV, v:myBV)
+   requires true
+   ensures true
+{}
+
+method net_dequeue_active(q: myBV, a: myBV) returns (r: Bool)
+   requires true
+   ensures true
+{}
+
+method lds(s: Shape, a: myBV) returns (v: Record) 
    requires true
    ensures true
 {}
@@ -127,11 +169,83 @@ method tx_provide() returns (r: Int) {
 
       // --- END OF BLOCK 1 ------------------------------------------------------- //
 
+      var buffer_addr: myBV := add(ETH_FUNC_BASE, toBV64(512))
+      var err: Bool := net_dequeue_active(tx_queue, buffer_addr) // Not sure about typing here
+      inhale !err // temporary assumption so that no verification errors -- REMOVE LATER
+      assert(!err) // This is also maybe not we want (Viper will really try to check this)
 
+      // --- END OF BLOCK 2 ------------------------------------------------------- //
+      // ^-- This part requires some revision --------------------------------------//
 
+      /* var stat = TXD_READY | TXD_ADDCRC | TXD_LAST; // uint16_t
+         hw_ring_get_tail(hw_tail, hw_ring_tx)
+         if ((hw_tail + 1) == TX_COUNT) {
+               stat = (stat | WRAP) & MASK_16;
+         }
+         hw_ring_get_descr_mdata(buff, hw_tail, hw_ring_tx)
+         var buffer = lds {2} buffer_addr;
+         !stw buff, buffer.0;
+         !stw buff + WORD_SIZE, buffer.1;
+      */
 
+      var stat: myBV := or(TXD_READY, or(TXD_ADDCRC, TXD_LAST)) // Could make this a 16-len bitvector
+      // Expanded macro for `hw_ring_get_tail(hw_tail, hw_ring_tx)`
+      var hw_tail: myBV := toBV64(0)
+      shared_ldw(hw_tail, hw_ring_tx)
 
+      if (add(hw_tail,toBV64(1)) == TX_COUNT) {
+         stat := and(or(stat, WRAP), MASK_16)
+      }
+      // Expanded macro for `hw_ring_get_descr_mdata(buff, hw_tail, hw_ring_tx)`
+      var buff: myBV := add(hw_ring_tx,add(toBV64(16),mul(hw_tail, NET_BUFF_DESC_SIZE)))
 
+      var buffer: Record := lds(cons_shape(Seq(2)), buffer_addr)
+      shared_stw(buff, get_word_field(buffer,0))
+      shared_stw(add(buff, WORD_SIZE), get_word_field(buffer,1))
+      
+      // --- END OF BLOCK 3 ------------------------------------------------------- //
+    
+      /* 
+         get_io_or_offset(io_or_offset, buffer_addr)
+         get_len(len, buffer_addr)
+         update_ring_slot(hw_ring_tx, hw_tail, io_or_offset, len, stat)
+      */
+
+      // Expanded macro for `get_io_or_offset(io_or_offset, buffer_addr)`
+      var io_or_offset: myBV := toBV64(0)
+      shared_ldw(io_or_offset, buffer_addr)
+      // Expanded macro for `get_len(len, buffer_addr)`
+      var len: myBV := toBV64(0)
+      shared_ldw(len, add(buffer_addr,WORD_SIZE))
+      // Expanded macro for `update_ring_slot(hw_ring_tx, hw_tail, io_or_offset, len, stat)`
+         // Expanded macro for `hw_ring_get_descr(descr, hw_ring_tx)
+      var addr: myBV := add(hw_ring_tx,add(mul(toBV64(2),WORD_SIZE),mul(MAX_COUNT,NET_BUFF_DESC_SIZE))) 
+      var descr_R: Record := lds(shape_One(), addr)
+      // Next line is because of how I've set up shapes..
+      var descr: myBV := get_word_field(descr_R,0) 
+
+      var dst_addr: myBV := add(descr, mul(hw_tail,DESCRIPTOR_SIZE))
+      var descriptor: myBV := or(shl(stat, toBV64(16)), len)
+      shared_st32(dst_addr, descriptor)
+      shared_st32(add(dst_addr,toBV64(4)), io_or_offset)
+
+      // --- END OF BLOCK 4 ------------------------------------------------------- //
+  
+      /* 
+         hw_tail = hw_tail + 1;
+         pnk_modulo(mod, hw_tail, TX_COUNT)
+         hw_ring_set_tail(mod, hw_ring_tx)
+      */
+      
+  
+      // --- END OF BLOCK 5 ------------------------------------------------------- //
+
+      /*
+         get_eth_tdar(tdar, eth)
+         if (!(tdar & TDAR_TDAR)) {
+            set_eth_tdar(TDAR_TDAR, eth)
+         }
+      */
     }
 
 
@@ -227,19 +341,19 @@ field uart_base: Ref
 
 // Fields of a named location on heap 
 //   this layer of indirection could be dropped if unnecessary
-field val: myBV
-field addr: myBV // each named location should correspond to a fixed address
+// field val: myBV
+// field addr: myBV // each named location should correspond to a fixed address
 // so we should always have partial (but never exclusive) permissions to _.addr 
 
 // Using this (abstract - for now) method for now will make future modifications
 //   of the heap model easier to implement
 // Things get weird w/ wildcare permissions, so throughout this document 1/4 is used as the non-zero, 
 //   non-exclusive fractional permission amount wherever possible
-method lds(src: Ref) returns (res: myBV) 
+/* method lds(src: Ref) returns (res: myBV) 
    requires acc(src.val, 1/4) && acc(src.addr,1/4)
    ensures acc(src.val, 1/4) && res == src.val && acc(src.addr,1/4)  
 { res := src.val } 
-
+*/ 
 // ---------------------------------------------------------------------------------------- //
 
 // #define MASK_HW 65535
