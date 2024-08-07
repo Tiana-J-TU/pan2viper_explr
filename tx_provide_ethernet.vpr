@@ -180,6 +180,7 @@ method tx_provide() returns (r: Int) {
    
       if (full || empty) {
          // break // Well this doesn't work - deal with it later
+         // could always use a goto, not sure if this is troublesome
       }
 
       // --- END OF BLOCK 1 ------------------------------------------------------- //
@@ -353,4 +354,37 @@ method tx_provide() returns (r: Int) {
    }
   }
   r := 0
+}
+
+domain Event {
+   // Enumerate possible kinds of device events
+   // These are just examples, I'm not sure what we would need here 
+   function read_event(): Event
+   function write_event(): Event 
+
+   // Listing these out could get annoying if many kinds of events
+   axiom events_distinct {
+      read_event() != write_event()
+   } 
+}
+// or maybe it would suffice to just have the trace of past states 
+
+/* Device Model Ideas */
+
+// device state is a Ref object with fields
+field log: Seq[Event]
+field curr_state: Int
+
+method device_transition(a: myBV, acc_type: Bool, data: myBV, device_state: Ref)
+   requires true // Pass permissions to memory-mapped device registers?
+   ensures true  // and then return (?) these permissions afterwards
+   // If these permissions vary significantly, might break this device transition into
+   //    multiple different methods
+{
+   inhale acc(device_state.log)
+   inhale acc(device_state.curr_state)
+
+   /* Insert transition fn details here. */
+   // Should transition to next state based on `device_state.curr_state` & given inputs
+   //   & update any device registers, add to `device_state.log` accordingly
 }
