@@ -372,6 +372,9 @@ domain Event {
 /* Device Model Ideas */
 
 // device state is a Ref object with fields
+
+// OLD IMPLEMENTATION
+/*
 field log: Seq[Event]
 field curr_state: Int
 
@@ -384,7 +387,75 @@ method device_transition(a: myBV, acc_type: Bool, data: myBV, device_state: Ref)
    inhale acc(device_state.log)
    inhale acc(device_state.curr_state)
 
-   /* Insert transition fn details here. */
+   // Insert transition fn details here.
    // Should transition to next state based on `device_state.curr_state` & given inputs
    //   & update any device registers, add to `device_state.log` accordingly
 }
+*/
+
+// Meeting comments
+// Modelling of header flags for each packet? Note `wrap` flag significantly chages behaviour
+//   doing this properly may require an array of flags 
+
+// State objects should have fields
+field HWS_n_active_bufs: Int
+field HWS_head: Int //  between 0-7 [inclusive]
+field HWS_tail: Int // between 0-7 [inclusive]
+
+// Part of virt implementation: 
+//   - assume that we never exceed the max number of buffers, since virtualiser 
+//       will only use free buffers to pass info, and these buffers are provided
+//       by the device itself
+
+// Start of larger model which includes OS-side interactions
+field VRT_n_empty_bufs: Int
+field VRT_n_active_bufs: Int
+
+define total_n_bufs 8
+// Any of the following might suffice to show that no active buffers are overwritten before
+//   they are processed
+// ensure st.HWS_n_active_bufs + st.VRT_n_empty_bufs + st.VRT_active_bufs == total_n_bufs
+
+define HWS_acc(st) acc(st.HWS_n_active_bufs) && acc(st.HWS_head) && acc(st.HWS_tail) 
+define VRT_acc(st) acc(st.VRT_n_active_bufs) && acc(st.VRT_n_empty_bufs)
+
+method dev_init(HWS: Ref) 
+   requires HWS_acc(HWS)
+   // acc(HWS.HWS_n_active_bufs) && acc(HWS.HWS_head) && acc(HWS.HWS_tail) 
+   ensures HWS_acc(HWS)
+   // acc(HWS.HWS_n_active_bufs) && acc(HWS.HWS_head) && acc(HWS.HWS_tail) 
+   ensures HWS.HWS_head == 0 && HWS.HWS_n_active_bufs == 0 && HWS.HWS_tail == 0 
+
+function ND_select(n_active_bufs : Int): Int 
+   ensures 0 <= result && result <= n_active_bufs
+
+// RX-side HW model
+method device_transition(HWS: Ref) 
+   requires acc(HWS.HWS_n_active_bufs) && acc(HWS.HWS_head) && acc(HWS.HWS_tail) 
+   ensures true // Should look something like example from paper 
+{ 
+   
+   // Implement transition which respects postcondition
+
+   if (HWS.HWS_n_active_bufs == 0) {}
+   else { 
+      var x: Int := ND_select(HWS.HWS_n_active_bufs)
+      HWS.HWS_head := HWS.HWS_head + x  // modulo 8? Might complicate reasoning
+      HWS.HWS_n_active_bufs := HWS.HWS_head - x
+   }
+
+}
+
+// Device HW ring client-side accesses now depend on state
+// These model query functions should be used within shared_stw--, etc.
+
+// Writing a buffer, then setting the header to notify device
+//   --> increment the number of active buffers and tail by 1
+
+// Every time we check whether the i-th buffer is available
+//   --> trigger a ND transition
+//   --> depending on results, decide if buffer free or not
+
+// How to easily identify the index of the current buffer from a given shared memory 
+//   access ?? 
+
