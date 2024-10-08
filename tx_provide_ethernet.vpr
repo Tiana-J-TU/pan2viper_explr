@@ -80,11 +80,6 @@ method shared_ldw(d: myBV, s: myBV)
    ensures true
 {}
 
-method shared_ld32(d: myBV, s: myBV)
-   requires true
-   ensures true
-{}
-
 method shared_stw(a: myBV, v: myBV) 
    requires true
    ensures true
@@ -95,10 +90,181 @@ method shared_st8(a: myBV, v: myBV)
    ensures true
 {}
 
-method shared_st32(a: myBV, v:myBV)
+// Placeholder addresses - probably inaccurate - I don't know where 
+//   exactly all these addresses are yet
+// The idea is to compute these fixed addresses in advance (so long as there
+// aren't too many of them)
+define HW_RING_ST toBV64(0)  // First usable cell address
+define HW_RING_END toBV64(8) // First *un*usable (out of bounds) cell address (could be changed to last usable address)
+define HW_RING_END_INDEX 8   // The int which corresponds to the BV value above
+define HW_RING_LENGTH_INT 8
+define HW_RING_0 toBV64(0)
+define HW_RING_1 toBV64(1)
+define HW_RING_2 toBV64(2*8)
+define HW_RING_3 toBV64(3*8)
+define HW_RING_4 toBV64(4*8)
+define HW_RING_5 toBV64(5*8)
+define HW_RING_6 toBV64(6*8)
+define HW_RING_7 toBV64(7*8) 
+define HW_WRAP toBV64(8*8)
+define HW_STAT toBV64(9*8)
+
+field HWS_n_active_bufs: Int
+field HWS_head: Int //  between 0-7 [inclusive]
+field HWS_tail: Int // between 0-7 [inclusive]
+field HWS_proc: Bool
+field HWS_err: Bool
+
+define HWS_acc(st) acc(st.HWS_n_active_bufs) && acc(st.HWS_head) && acc(st.HWS_tail) && acc(st.HWS_proc) && acc(st.HWS_err)
+
+method init_HWS() returns (HWS: Ref) 
    requires true
-   ensures true
-{}
+   ensures HWS_acc(HWS)
+{
+   HWS := new(HWS_n_active_bufs, HWS_head, HWS_tail, HWS_proc, HWS_err)
+   HWS.HWS_n_active_bufs := 0 
+   HWS.HWS_head := 0
+   HWS.HWS_tail := 0
+   HWS.HWS_proc := false
+   HWS.HWS_err  := false
+}
+
+// What is the minimal yet sound device model?
+// shared stores write buffers / buffer headers
+method shared_st32(a: myBV, v:myBV, HWS: Ref)
+   requires HWS_acc(HWS)
+   ensures HWS_acc(HWS)
+{  
+   // Simplified model: does not check that header set correctly
+   // Translate concrete address & data into abstract transition
+   if (a == HW_RING_0) { transition_write_buffer(HWS,0) }
+   if (a == HW_RING_1) { transition_write_buffer(HWS,1) }
+   if (a == HW_RING_2) { transition_write_buffer(HWS,2) }
+   if (a == HW_RING_3) { transition_write_buffer(HWS,3) }
+   if (a == HW_RING_4) { transition_write_buffer(HWS,4) }
+   if (a == HW_RING_5) { transition_write_buffer(HWS,5) }
+   if (a == HW_RING_6) { transition_write_buffer(HWS,6) }
+   if (a == HW_RING_7) { transition_write_buffer(HWS,7) } 
+   if (a == HW_STAT) { transition_trigger_proc(HWS) }
+   if (a == HW_WRAP) {}
+   // best way to assert that all of these addresses are distinct?
+   // possibly writing the above in an if-else format bypasses this need
+
+   // we have a finite (and low) number of buffer slots
+   // is ==? easy to determine with BVs? If so, potientially more performant
+   // to just hardcode address (word) -> index (int) conversion 
+}
+
+// Probably good to have this at some point
+function check_HWS_integrity(HWS: Ref): Bool 
+
+method transition_ND_processing(HWS: Ref)
+   requires HWS_acc(HWS)
+   ensures HWS_acc(HWS)
+{
+   if (HWS.HWS_proc) {
+      if (HWS.HWS_n_active_bufs > 0) {
+         var n: Int := ND_select(HWS.HWS_n_active_bufs)
+         HWS.HWS_n_active_bufs := HWS.HWS_n_active_bufs - n
+         HWS.HWS_head := HWS.HWS_head + n
+         // Then check integrity of state - not included yet
+         // If head now points to an empty buffer, stop processing until driver says to
+         if (HWS.HWS_head == HWS.HWS_tail) { HWS.HWS_proc := false }
+      }
+      // else: nothing to process anyway - this case probably shouldn't occur in practice
+   } 
+   // else: not in processing state - device isn't informed of anything 
+   //   to process at the current time
+}
+
+// Head/tail check very similar in style to the method below, perhaps I should
+//   separate some of this out into a function
+method check_buffer_empty(HWS: Ref, l: Int) returns (buffer_empty: Bool) 
+   requires HWS_acc(HWS)
+   requires 0 <= l && l < HW_RING_END_INDEX
+   ensures HWS_acc(HWS)
+{
+    if (HWS.HWS_head < HWS.HWS_tail) {
+      if (l < HWS.HWS_head || HWS.HWS_tail <= l) {
+         buffer_empty := true
+      }
+      else { buffer_empty := false }
+   } // Check if there is room to write buffer at the current location
+   elseif (HWS.HWS_head == HWS.HWS_tail) {
+      if (HWS.HWS_n_active_bufs == 0) { buffer_empty := true}
+      else { buffer_empty := false}
+   }
+   elseif (HWS.HWS_tail < HWS.HWS_head) {
+      if (HWS.HWS_tail <= l && l < HWS.HWS_head) { buffer_empty := true }
+      else { buffer_empty := false }
+   }
+}
+
+define BUFFER_EMPTY toBV64(127) // Just a guess at the value
+
+// shared loads check headers
+method shared_ld32(d: myBV, s: myBV, HWS: Ref) 
+   requires HWS_acc(HWS)
+   ensures HWS_acc(HWS)
+{
+   var empty_stat: Bool := false
+   if (s == HW_RING_0) { empty_stat := check_buffer_empty(HWS, 0) }
+   if (s == HW_RING_1) { empty_stat := check_buffer_empty(HWS, 1) }
+   if (s == HW_RING_2) { empty_stat := check_buffer_empty(HWS, 2) }
+   if (s == HW_RING_3) { empty_stat := check_buffer_empty(HWS, 3) }
+   if (s == HW_RING_4) { empty_stat := check_buffer_empty(HWS, 4) }
+   if (s == HW_RING_5) { empty_stat := check_buffer_empty(HWS, 5) }
+   if (s == HW_RING_6) { empty_stat := check_buffer_empty(HWS, 6) }
+   if (s == HW_RING_7) { empty_stat := check_buffer_empty(HWS, 7) } 
+
+   // if (empty_stat) { d := BUFFER_EMPTY } // May have to change the way that this works to update value of d 
+   // (which is really a heap value w/ global visibility rather than an isolated BV)
+}
+
+
+
+method transition_write_buffer(HWS: Ref, l: Int) 
+   requires HWS_acc(HWS)
+   requires 0 <= l && l < HW_RING_END_INDEX
+   ensures HWS_acc(HWS)
+{  
+   // First update current view of device state to account for any
+   //   processesing which has occurred before our write attempt
+   if (HWS.HWS_proc) { 
+      transition_ND_processing(HWS)
+   }
+
+   // Transition immediately to an error state if overwrite occurs, otherwise
+   //   update the current state to reflect the newly added active buffer
+   if (HWS.HWS_head < HWS.HWS_tail) {
+      if (l < HWS.HWS_head || HWS.HWS_tail <= l) {
+         HWS.HWS_tail := (HWS.HWS_tail + 1) % HW_RING_LENGTH_INT
+         HWS.HWS_n_active_bufs := HWS.HWS_n_active_bufs + 1
+      }
+      else { HWS.HWS_err := true }
+   } // Check if there is room to write buffer at the current location
+   elseif (HWS.HWS_head == HWS.HWS_tail) {
+      if (HWS.HWS_n_active_bufs == 0) {
+         HWS.HWS_tail := (HWS.HWS_tail + 1) % HW_RING_LENGTH_INT
+         HWS.HWS_n_active_bufs := HWS.HWS_n_active_bufs + 1
+      }
+      else { HWS.HWS_err := true }
+   }
+   elseif (HWS.HWS_tail < HWS.HWS_head) {
+      if (HWS.HWS_tail <= l && l < HWS.HWS_head) {
+         HWS.HWS_tail := (HWS.HWS_tail + 1) % HW_RING_LENGTH_INT
+         HWS.HWS_n_active_bufs := HWS.HWS_n_active_bufs + 1
+      }
+      else { HWS.HWS_err := true }
+   }
+}
+
+method transition_trigger_proc(HWS: Ref)
+   requires acc(HWS.HWS_proc)
+   ensures acc(HWS.HWS_proc)
+{
+   HWS.HWS_proc := true
+}
 
 method net_dequeue_active(q: myBV, a: myBV) returns (r: Bool)
    requires true
@@ -111,8 +277,12 @@ method lds(s: Shape, a: myBV) returns (v: Record)
 {}
 
 define bv_zero toBV64(0)
-method tx_provide() returns (r: Int) {
-
+// Input param for device state modelling only
+method tx_provide(HW_state: Ref) returns (r: Int) 
+   requires HWS_acc(HW_state)
+   ensures HWS_acc(HW_state)
+{
+   
   /* 
     var reprocess = true;
     get_hw_ring_tx(hw_ring_tx) // macro
@@ -131,8 +301,8 @@ method tx_provide() returns (r: Int) {
   // Loading the Shape `1` has to be done in two steps (because of how I've encoded `lds` & Shapes)
   var eth: myBV := get_word_field(eth_R,0)
 
-  while (reprocess) {
-    while (true) {
+  while (reprocess) invariant HWS_acc(HW_state) {
+    while (true) invariant HWS_acc(HW_state) {
       /*
         hw_ring_full(full, hw_ring_tx, TX_COUNT)
         net_queue_empty_active(empty, tx_queue)
@@ -242,8 +412,8 @@ method tx_provide() returns (r: Int) {
 
       var dst_addr: myBV := add(descr, mul(hw_tail,DESCRIPTOR_SIZE))
       var descriptor: myBV := or(shl(stat, toBV64(16)), len)
-      shared_st32(dst_addr, descriptor)
-      shared_st32(add(dst_addr,toBV64(4)), io_or_offset)
+      shared_st32(dst_addr, descriptor, HW_state)
+      shared_st32(add(dst_addr,toBV64(4)), io_or_offset, HW_state)
 
       // --- END OF BLOCK 4 ------------------------------------------------------- //
   
@@ -271,11 +441,11 @@ method tx_provide() returns (r: Int) {
       */
       // Expanded macro for `get_eth_tdar(tdar, eth)`
       var tdar: myBV := toBV64(0)
-      shared_ld32(tdar, add(eth, TDAR_OFFSET))
+      shared_ld32(tdar, add(eth, TDAR_OFFSET), HW_state)
 
       if (!toBool(and(tdar, TDAR_TDAR))) {
          // Expanded macro for `set_eth_tdar(TDAR_TDAR, eth)
-         shared_st32(add(eth, TDAR_OFFSET), tdar)
+         shared_st32(add(eth, TDAR_OFFSET), tdar, HW_state)
       }
 
     }
@@ -344,7 +514,7 @@ method tx_provide() returns (r: Int) {
       // Expanded macro for `net_cancel_signal_active(tx_queue)
         // Expanded macro for `get_free_queue(queue, tx_queue)`
       queue := toBV64(0)
-      shared_ldw(queue, tx_queue)  
+      shared_ldw(queue, tx_queue)
         // Expanded macro for `set_consumer_signalled(queue)`
       signal := toBV64(1)
       shared_st8(add(queue,mul(toBV64(2),WORD_SIZE)), signal)
@@ -397,11 +567,6 @@ method device_transition(a: myBV, acc_type: Bool, data: myBV, device_state: Ref)
 // Modelling of header flags for each packet? Note `wrap` flag significantly chages behaviour
 //   doing this properly may require an array of flags 
 
-// State objects should have fields
-field HWS_n_active_bufs: Int
-field HWS_head: Int //  between 0-7 [inclusive]
-field HWS_tail: Int // between 0-7 [inclusive]
-
 // Part of virt implementation: 
 //   - assume that we never exceed the max number of buffers, since virtualiser 
 //       will only use free buffers to pass info, and these buffers are provided
@@ -416,7 +581,6 @@ define total_n_bufs 8
 //   they are processed
 // ensure st.HWS_n_active_bufs + st.VRT_n_empty_bufs + st.VRT_active_bufs == total_n_bufs
 
-define HWS_acc(st) acc(st.HWS_n_active_bufs) && acc(st.HWS_head) && acc(st.HWS_tail) 
 define VRT_acc(st) acc(st.VRT_n_active_bufs) && acc(st.VRT_n_empty_bufs)
 
 method dev_init(HWS: Ref) 
@@ -458,4 +622,7 @@ method device_transition(HWS: Ref)
 
 // How to easily identify the index of the current buffer from a given shared memory 
 //   access ?? 
+// Convert `tail`, `head` to ints? Is BV <-> Int casting avoidable somehow?
+
+
 
